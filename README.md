@@ -81,19 +81,19 @@ Point a QStash schedule at `/api/ingest` with cron `*/5 * * * *`. Reads are bill
   reclassification of ~350 posts is under a cent.
 - **Redis** — two commands per stored post, one query plus one aggregate per page view.
 
-## Making it about your own company
+## Making it about your own brand
 
-"Upstash" appears in this repo in two different roles, and only one of them has to change: the company
+"Upstash" appears in this repo in two different roles, and only one of them has to change: the brand
 being *monitored*, and the infrastructure the app *runs on*. The pipeline itself knows nothing about
 Upstash — it works with whatever vocabulary you define.
 
 ### 1. The subject — change these
 
-| File | What is company-specific |
+| File | What is brand-specific |
 | --- | --- |
 | `lib/x.ts` | `X_QUERY`, the search terms |
 | `lib/classify.ts` | `PRODUCTS`, the product list Jev chooses from |
-| `lib/classify.ts` | `CONTEXT`, one sentence telling Jev what the company is |
+| `lib/classify.ts` | `CONTEXT`, one sentence telling Jev what the brand is |
 | `lib/classify.ts` | The question wording: "Which Upstash product…", "sentiment toward Upstash", "Should someone from Upstash reply…", "stop using Upstash", and the competitor examples in `competitor_mention` |
 | `lib/labels.ts` | `PRODUCT_META`, the label and dot colour per product |
 | `app/page.tsx` | Header mark, `<h1>`, the tagline and the footer links |
@@ -131,7 +131,7 @@ gripes, churn risk and "needs a reply" mean the same thing for any SaaS.
 ### 2. The infrastructure — keep it
 
 `lib/reviews.ts`, `lib/sentences.ts`, `lib/filters.ts`, `lib/types.ts`, the three API routes and both
-components contain no company knowledge. Point `UPSTASH_REDIS_REST_URL` at your own database and they work
+components contain no brand knowledge. Point `UPSTASH_REDIS_REST_URL` at your own database and they work
 unchanged. Redis Search is the engine here rather than the subject: the facet counts, the typo-tolerant
 search and the whole dashboard are one query and one `aggregate()` against it. Rebuilding that on another
 store is possible (`tsvector` plus `GROUP BY` in Postgres, say) but it is a rewrite of `lib/reviews.ts` and

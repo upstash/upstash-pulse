@@ -23,14 +23,20 @@ export async function GET(request: Request) {
  * POST ?mode=repair re-fetches posts that were stored truncated (X only returns the first ~280
  * characters in `text`) and reclassifies the ones whose text actually changed.
  */
-async function repair() {
+async function repair(all: boolean) {
   const index = await getIndex();
   const hits = await index.query({ filter: { createdAt: { $gte: 0 } }, orderBy: { createdAt: "DESC" }, limit: 1000 } as any);
   const posts = (hits as any[]).map((h) => h.data);
-  // X caps `text` at 280 characters, so anything close to that may be cut; only a refetch tells.
-  // X caps posts at 280 *weighted* characters (CJK counts double) and ends the cut text with
-  // an ellipsis, so both signals are worth a refetch.
-  const suspect = posts.filter((p: any) => p.text.length >= 268 || /[…]\s*$/.test(p.text));
+  // X caps posts at 280 *weighted* characters, and invisible joiners inflate that count, so a
+  // cut post can be well under 280 actual characters. The cheap heuristic catches the obvious
+  // ones; `?all=1` refetches everything, which costs one X read per post.
+  const suspect = all
+    ? posts
+    : posts.filter((p: any) => {
+        const t = p.text.trim();
+        if (t.length >= 268 || /\u2026\s*$/.test(t)) return true;
+        return t.length >= 180 && !/[.!?\u2026\)\]"\u201d]$/.test(t) && !/https?:\/\/\S+$/.test(t);
+      });
   const texts = await fetchByIds(suspect.map((p: any) => p.id.replace(/^x-/, "")));
 
   const changed = suspect.filter((p: any) => {
@@ -87,7 +93,7 @@ async function ingest(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (new URL(request.url).searchParams.get("mode") === "repair") {
-    return repair();
+    return repair(new URL(request.url).searchParams.get("all") === "1");
   }
   if (new URL(request.url).searchParams.get("mode") === "reclassify") {
     const p = new URL(request.url).searchParams;

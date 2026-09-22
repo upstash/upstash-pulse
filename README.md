@@ -81,6 +81,73 @@ Point a QStash schedule at `/api/ingest` with cron `*/5 * * * *`. Reads are bill
   reclassification of ~350 posts is under a cent.
 - **Redis** — two commands per stored post, one query plus one aggregate per page view.
 
+## Making it about your own company
+
+"Upstash" appears in this repo in two different roles, and only one of them has to change: the company
+being *monitored*, and the infrastructure the app *runs on*. The pipeline itself knows nothing about
+Upstash — it works with whatever vocabulary you define.
+
+### 1. The subject — change these
+
+| File | What is company-specific |
+| --- | --- |
+| `lib/x.ts` | `X_QUERY`, the search terms |
+| `lib/classify.ts` | `PRODUCTS`, the product list Jev chooses from |
+| `lib/classify.ts` | `CONTEXT`, one sentence telling Jev what the company is |
+| `lib/classify.ts` | The question wording: "Which Upstash product…", "sentiment toward Upstash", "Should someone from Upstash reply…", "stop using Upstash", and the competitor examples in `competitor_mention` |
+| `lib/labels.ts` | `PRODUCT_META`, the label and dot colour per product |
+| `app/page.tsx` | Header mark, `<h1>`, the tagline and the footer links |
+| `app/layout.tsx` | `metadata.title` and `metadata.description` |
+| `app/icon.png`, `app/apple-icon.png`, `public/*.svg` | Favicon and logo |
+
+For a Supabase-flavoured fork, that is:
+
+```ts
+// lib/x.ts
+export const X_QUERY = "(supabase OR @supabase OR url:supabase) -from:supabase -is:retweet";
+
+// lib/classify.ts
+export const PRODUCTS = {
+  database: "Supabase Database (Postgres, SQL, migrations, extensions)",
+  auth: "Supabase Auth (sign-in, OAuth, RLS policies, JWT)",
+  storage: "Supabase Storage (files, buckets, image transforms)",
+  realtime: "Supabase Realtime (broadcast, presence, postgres changes)",
+  edge_functions: "Edge Functions (Deno serverless functions)",
+  vector: "Supabase Vector / pgvector (embeddings, similarity search)",
+  tooling: "Studio, CLI, local development",
+  general: "Supabase as a company or platform, or no specific product",
+} as const;
+
+const CONTEXT =
+  "The text is a public post or piece of customer feedback about Supabase, an open source Firebase " +
+  "alternative built on Postgres (Database, Auth, Storage, Realtime, Edge Functions, Vector).";
+
+// competitor_mention: "...(e.g. Firebase, Neon, PlanetScale, AWS Amplify, Appwrite, Nhost, Convex)"
+```
+
+`INTENTS`, `TOPICS`, `SENTIMENTS` and the four signal flags need no edits — praise, complaints, pricing
+gripes, churn risk and "needs a reply" mean the same thing for any SaaS.
+
+### 2. The infrastructure — keep it
+
+`lib/reviews.ts`, `lib/sentences.ts`, `lib/filters.ts`, `lib/types.ts`, the three API routes and both
+components contain no company knowledge. Point `UPSTASH_REDIS_REST_URL` at your own database and they work
+unchanged. Redis Search is the engine here rather than the subject: the facet counts, the typo-tolerant
+search and the whole dashboard are one query and one `aggregate()` against it. Rebuilding that on another
+store is possible (`tsvector` plus `GROUP BY` in Postgres, say) but it is a rewrite of `lib/reviews.ts` and
+both read routes, and the dashboard stops being a single call. Jev is reached through Vercel AI Gateway
+either way; only the question text changes.
+
+### 3. Three things that will bite you
+
+1. **Keys must line up across files.** `PRODUCTS` ↔ `PRODUCT_META`, `INTENTS` ↔ `INTENT_META`,
+   `TOPICS` ↔ `TOPIC_LABEL`. A key in one but not the other renders a chip with no label or colour.
+2. **Re-run the classifier after changing the vocabulary.** Stored posts keep their old categories until
+   `POST /api/ingest?mode=reclassify&limit=200&force=1` has been through them.
+3. **Volume decides the bill, not the polling interval.** X charges per post returned, so a busier name
+   costs proportionally more: a few thousand mentions a day is $10–15/day rather than cents. Narrow the
+   query (`-is:reply`, `lang:en`) and set a spend cap in the X console before turning the schedule on.
+
 ## Layout
 
 ```

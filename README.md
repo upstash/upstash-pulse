@@ -8,8 +8,6 @@ Every few minutes the app pulls new public posts mentioning Upstash, sends each 
 document in Upstash Redis. A Redis Search index over those documents powers the whole UI: full-text search,
 facet counts, boolean and range filters, sorting and the dashboard aggregations.
 
-Live: https://upstash-pulse.vercel.app
-
 ## How it works
 
 ```

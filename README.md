@@ -134,13 +134,28 @@ either way; only the question text changes.
 
 ### 3. Three things that will bite you
 
-1. **Keys must line up across files.** `PRODUCTS` ↔ `PRODUCT_META`, `INTENTS` ↔ `INTENT_META`,
-   `TOPICS` ↔ `TOPIC_LABEL`. A key in one but not the other renders a chip with no label or colour.
-2. **Re-run the classifier after changing the vocabulary.** Stored posts keep their old categories until
-   `POST /api/ingest?mode=reclassify&limit=200&force=1` has been through them.
-3. **Volume decides the bill, not the polling interval.** X charges per post returned, so a busier name
-   costs proportionally more: a few thousand mentions a day is $10–15/day rather than cents. Narrow the
-   query (`-is:reply`, `lang:en`) and set a spend cap in the X console before turning the schedule on.
+1. **A changed index schema needs the index dropped first.** `existsOk: true` does not update anything: if
+   the schema in `lib/reviews.ts` no longer matches the live index, every call fails with
+   `ERR Index posts already exists with a different configuration`, and because `getIndex()` caches that
+   rejected promise the whole app returns 500s. Drop it and let it rebuild — no data is lost, since the
+   index is derived from the `post:` keys and rescans them on creation:
+
+   ```ts
+   await redis.search.index({ name: "posts" }).drop();
+   ```
+
+2. **Re-run the classifier after changing the vocabulary.** Stored posts keep the categories they were
+   given, so old rows keep answering with products that no longer exist. `POST
+   /api/ingest?mode=reclassify&limit=200&force=1` fixes them, 200 at a time, so call it until
+   `reclassified` comes back 0. A product key the UI does not know about is not a crash, but it is worse
+   than one: `PRODUCT_META[post.product] ?? PRODUCT_META.general` quietly labels it "General", and it never
+   appears in the filter dropdown.
+
+3. **Volume decides the bill, not the polling interval.** X charges per post returned, so `since_id` makes
+   a quiet run free no matter how often it runs, while a busy name costs in proportion to its mentions. At
+   the published $0.005 per post read, a few thousand mentions a day works out at $10–15/day rather than
+   cents. Narrow the query (`-is:reply`, `lang:en`) and set a spend cap in the X console before turning the
+   schedule on.
 
 ## Layout
 

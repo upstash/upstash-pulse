@@ -100,29 +100,23 @@ Upstash — it works with whatever vocabulary you define.
 | `app/layout.tsx` | `metadata.title` and `metadata.description` |
 | `app/icon.png`, `app/apple-icon.png`, `public/*.svg` | Favicon and logo |
 
-For a Supabase-flavoured fork, that is:
+The shape to fill in:
 
 ```ts
-// lib/x.ts
-export const X_QUERY = "(supabase OR @supabase OR url:supabase) -from:supabase -is:retweet";
+// lib/x.ts — the search that decides what gets ingested
+export const X_QUERY = "(<name> OR @<handle> OR url:<domain>) -from:<handle> -is:retweet";
 
-// lib/classify.ts
+// lib/classify.ts — the options Jev picks between, one line each
 export const PRODUCTS = {
-  database: "Supabase Database (Postgres, SQL, migrations, extensions)",
-  auth: "Supabase Auth (sign-in, OAuth, RLS policies, JWT)",
-  storage: "Supabase Storage (files, buckets, image transforms)",
-  realtime: "Supabase Realtime (broadcast, presence, postgres changes)",
-  edge_functions: "Edge Functions (Deno serverless functions)",
-  vector: "Supabase Vector / pgvector (embeddings, similarity search)",
-  tooling: "Studio, CLI, local development",
-  general: "Supabase as a company or platform, or no specific product",
+  <key>: "<product name> (what it is, in a few words)",
+  // ...one entry per product you want to tell apart...
+  general: "<name> itself, or no specific product",
 } as const;
 
-const CONTEXT =
-  "The text is a public post or piece of customer feedback about Supabase, an open source Firebase " +
-  "alternative built on Postgres (Database, Auth, Storage, Realtime, Edge Functions, Vector).";
+// one sentence of context, so Jev knows what it is reading about
+const CONTEXT = "The text is a public post or piece of customer feedback about <name>, <what you do, in a line>.";
 
-// competitor_mention: "...(e.g. Firebase, Neon, PlanetScale, AWS Amplify, Appwrite, Nhost, Convex)"
+// competitor_mention: "...(e.g. the three or four names you actually get compared to)"
 ```
 
 `INTENTS`, `TOPICS`, `SENTIMENTS` and the four signal flags need no edits — praise, complaints, pricing

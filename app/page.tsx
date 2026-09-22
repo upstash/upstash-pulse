@@ -109,7 +109,7 @@ export default function Page() {
           {feed && feed.posts.length < feed.matched && (
             <div className="border-t p-3 text-center">
               <Button variant="ghost" size="sm" onClick={loadMore} disabled={loadingMore}>
-                {loadingMore ? "Loading…" : `Show more (${feed.matched - feed.posts.length} left)`}
+                {loadingMore ? "Loading…" : `Load ${Math.min(PAGE, feed.matched - feed.posts.length)} more (${feed.matched - feed.posts.length} left)`}
               </Button>
             </div>
           )}

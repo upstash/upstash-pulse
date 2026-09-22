@@ -1,10 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { FLAG_META, INTENT_META, PRODUCT_META, SENTIMENT_META, TOPIC_LABEL, compact, timeAgo, urgencyLabel } from "@/lib/labels";
 import type { FilterState, PostView } from "@/lib/types";
 
 const pct = (n?: number) => (n == null ? "" : `${Math.round(n * 100)}%`);
+
+// Long posts are folded to keep the feed scannable; a search always shows everything.
+const FOLD_CHARS = 520;
 
 export function XLogo({ className = "size-3.5" }: { className?: string }) {
   return (
@@ -29,6 +33,8 @@ export function PostCard({ post, filters, onFilter }: { post: PostView; filters:
   const signal = primarySignal(post);
   const urgency = urgencyLabel(post.urgency);
   const why = evidenceText(post);
+  const [expanded, setExpanded] = useState(false);
+  const folded = post.text.length > FOLD_CHARS && !expanded && !post.highlighted;
 
   return (
     <article className="px-5 py-4">
@@ -54,7 +60,15 @@ export function PostCard({ post, filters, onFilter }: { post: PostView; filters:
             )}
           </div>
 
-          <p className="mt-1 text-[15px] leading-relaxed break-words whitespace-pre-wrap">{renderBody(post)}</p>
+          <div className={folded ? "relative max-h-44 overflow-hidden" : undefined}>
+            <p className="mt-1 text-[15px] leading-relaxed break-words whitespace-pre-wrap">{renderBody(post)}</p>
+            {folded && <div className="from-card pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-linear-to-t to-transparent" />}
+          </div>
+          {post.text.length > FOLD_CHARS && !post.highlighted && (
+            <button onClick={() => setExpanded((v) => !v)} className="text-muted-foreground hover:text-foreground mt-1 text-sm">
+              {expanded ? "Show less" : "Show more"}
+            </button>
+          )}
 
           <div className="text-muted-foreground mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
             <button onClick={() => onFilter({ sentiment: filters.sentiment.length === 1 && filters.sentiment[0] === post.sentiment ? [] : [post.sentiment] })} className="hover:text-foreground inline-flex items-center gap-1.5" title={`${pct(post.confidence?.sentiment)} confident`}>

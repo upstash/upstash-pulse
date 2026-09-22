@@ -13,8 +13,23 @@ export type Tweet = {
   lang?: string;
 };
 
+export type RawTweet = {
+  id: string;
+  text: string;
+  note_tweet?: { text?: string };
+  author_id: string;
+  created_at: string;
+  lang?: string;
+  public_metrics?: Record<string, number>;
+};
+
+/** Posts over ~280 characters come back truncated in `text`; the full version is in `note_tweet`. */
+export function fullText(t: { text: string; note_tweet?: { text?: string } }) {
+  return t.note_tweet?.text?.trim() || t.text;
+}
+
 type Page = {
-  data?: { id: string; text: string; author_id: string; created_at: string; lang?: string; public_metrics?: Record<string, number> }[];
+  data?: RawTweet[];
   includes?: { users?: { id: string; username: string; name?: string }[] };
   meta?: { newest_id?: string; next_token?: string; result_count: number };
   title?: string;
@@ -38,7 +53,7 @@ export async function fetchMentions(opts: { sinceId?: string; endTime?: number; 
       query: X_QUERY,
       max_results: "100",
       sort_order: "recency",
-      "tweet.fields": "created_at,public_metrics,author_id,lang",
+      "tweet.fields": "created_at,public_metrics,author_id,lang,note_tweet",
       expansions: "author_id",
       "user.fields": "username,name",
     });
@@ -70,7 +85,7 @@ export async function fetchMentions(opts: { sinceId?: string; endTime?: number; 
       const author = u?.username ?? t.author_id;
       tweets.push({
         id: t.id,
-        text: t.text,
+        text: fullText(t),
         author,
         authorName: u?.name,
         url: `https://x.com/${author}/status/${t.id}`,
@@ -85,4 +100,20 @@ export async function fetchMentions(opts: { sinceId?: string; endTime?: number; 
   } while (nextToken && tweets.length < maxTweets);
 
   return { tweets, newestId };
+}
+
+/** Looks up posts by id, used to repair rows stored before note_tweet was requested. */
+export async function fetchByIds(ids: string[]) {
+  const token = process.env.X_BEARER_TOKEN;
+  if (!token) throw new Error("X_BEARER_TOKEN is not set.");
+  const out = new Map<string, string>();
+  for (let i = 0; i < ids.length; i += 100) {
+    const params = new URLSearchParams({ ids: ids.slice(i, i + 100).join(","), "tweet.fields": "note_tweet,text" });
+    const res = await fetch(`https://api.x.com/2/tweets?${params}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+    const json = (await res.json()) as { data?: RawTweet[]; title?: string; detail?: string };
+    if (!res.ok) throw new Error(`X API ${res.status}: ${json.title ?? ""} ${json.detail ?? ""}`.trim());
+    for (const t of json.data ?? []) out.set(t.id, fullText(t));
+    if (i + 100 < ids.length) await new Promise((r) => setTimeout(r, 1100));
+  }
+  return out;
 }

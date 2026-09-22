@@ -1,4 +1,4 @@
-import { buildFilter, getIndex } from "@/lib/reviews";
+import { buildFilter, getIndex, redis } from "@/lib/reviews";
 import { parseFilters } from "@/lib/filters";
 
 export const dynamic = "force-dynamic";
@@ -45,8 +45,17 @@ export async function GET(request: Request) {
   const buckets = (name: string) =>
     Object.fromEntries(((facets as any)[name]?.buckets ?? []).map((b: any) => [b.key, b.docCount]));
 
+  // With `highlight` on, Redis Search replaces the returned text with a marked *snippet*,
+  // so the full documents are read back separately and the snippet is kept only for the
+  // matched words (the client re-marks them in the full text).
+  let posts = (hits as any[]).map((h) => ({ ...h.data, highlighted: f.q.trim() ? h.data?.text : undefined }));
+  if (f.q.trim() && posts.length) {
+    const full = await redis.json.mget<any[]>((hits as any[]).map((h) => h.key), "$");
+    posts = posts.map((p, i) => ({ ...(full[i]?.[0] ?? p), highlighted: p.highlighted }));
+  }
+
   return Response.json({
-    posts: (hits as any[]).map((h) => ({ ...h.data, highlighted: f.q.trim() ? h.data?.text : undefined })),
+    posts,
     facets: Object.fromEntries(["source", "product", "intent", "topic", "sentiment"].map((k) => [k, buckets(k)])),
     matched: matched.count,
     sort,

@@ -10,7 +10,8 @@ const MIN_CHARS = 12;
  */
 export function splitSentences(text: string): Sentence[] {
   const parts: Sentence[] = [];
-  const re = /[^\n]+?(?:[.!?…]+(?=\s|$)|$)/gy;
+  // `m` matters: a line that ends without punctuation still ends a sentence.
+  const re = /[^\n]+?(?:[.!?…]+(?=\s|$)|$)/gym;
   let pos = 0;
   while (pos < text.length) {
     if (text[pos] === "\n") {

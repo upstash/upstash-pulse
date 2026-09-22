@@ -1,6 +1,6 @@
 import { classify } from "@/lib/classify";
 import { getIndex, PREFIX, redis, type Post } from "@/lib/reviews";
-import { fetchMentions } from "@/lib/x";
+import { fetchByIds, fetchMentions } from "@/lib/x";
 
 const LAST_ID_KEY = "x:last_id";
 const LAST_RUN_KEY = "x:last_run";
@@ -19,11 +19,51 @@ export async function GET(request: Request) {
   return ingest(request);
 }
 
+/**
+ * POST ?mode=repair re-fetches posts that were stored truncated (X only returns the first ~280
+ * characters in `text`) and reclassifies the ones whose text actually changed.
+ */
+async function repair() {
+  const index = await getIndex();
+  const hits = await index.query({ filter: { createdAt: { $gte: 0 } }, orderBy: { createdAt: "DESC" }, limit: 1000 } as any);
+  const posts = (hits as any[]).map((h) => h.data);
+  // X caps `text` at 280 characters, so anything close to that may be cut; only a refetch tells.
+  // X caps posts at 280 *weighted* characters (CJK counts double) and ends the cut text with
+  // an ellipsis, so both signals are worth a refetch.
+  const suspect = posts.filter((p: any) => p.text.length >= 268 || /[…]\s*$/.test(p.text));
+  const texts = await fetchByIds(suspect.map((p: any) => p.id.replace(/^x-/, "")));
+
+  const changed = suspect.filter((p: any) => {
+    const full = texts.get(p.id.replace(/^x-/, ""));
+    return full && full !== p.text;
+  });
+  const results = await Promise.allSettled(
+    changed.map(async (p: any) => {
+      const text = texts.get(p.id.replace(/^x-/, ""))!;
+      const classification = await classify(text);
+      await redis.json.set(PREFIX + p.id, "$", { ...p, text, ...classification } as any);
+    }),
+  );
+  const failed = results.filter((r) => r.status === "rejected");
+  if (changed.length) await index.waitIndexing();
+  return Response.json({
+    checked: suspect.length,
+    repaired: changed.length - failed.length,
+    failed: failed.map((f: any) => f.reason?.message ?? String(f.reason)).slice(0, 3),
+  });
+}
+
 /** POST ?mode=reclassify re-runs Jev over already stored posts, keeping their text and metrics. */
 async function reclassify(limit: number, force: boolean) {
   const index = await getIndex();
   const hits = await index.query({ filter: { createdAt: { $gte: 0 } }, orderBy: { createdAt: "DESC" }, limit: 1000 } as any);
-  const todo = (hits as any[]).map((h) => h.data).filter((d) => force || !d.evidence?.picks || Object.keys(d.evidence.picks).length === 0).slice(0, limit);
+  const todo = (hits as any[]).map((h) => h.data).filter((d) => {
+      if (force || !d.evidence?.picks) return true;
+      const { sentences = [], picks = {} } = d.evidence;
+      // Redo anything whose spans are missing or point outside the sentence list.
+      if (!sentences.length || !Object.keys(picks).length) return true;
+      return Object.values(picks).some((p: any) => !sentences[p.i]);
+    }).slice(0, limit);
   const results = await Promise.allSettled(
     todo.map(async (post: any) => {
       const classification = await classify(post.text);
@@ -45,6 +85,9 @@ async function ingest(request: Request) {
   const given = request.headers.get("authorization")?.replace(/^Bearer /, "") ?? new URL(request.url).searchParams.get("key");
   if (secret && given !== secret) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (new URL(request.url).searchParams.get("mode") === "repair") {
+    return repair();
   }
   if (new URL(request.url).searchParams.get("mode") === "reclassify") {
     const p = new URL(request.url).searchParams;
